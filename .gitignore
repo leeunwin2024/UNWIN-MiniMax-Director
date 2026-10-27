@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+
+# Local settings / credentials
+.env
+.env.*
+!.env.example
+*.log
+
+# Local renders and large model assets
+output/
+temp/
+renders/
+models/
+*.safetensors
+*.ckpt
+*.gguf
+*.pt
+*.pth
+*.onnx
+
+# OS and editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
