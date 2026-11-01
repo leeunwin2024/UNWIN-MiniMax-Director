@@ -80,6 +80,60 @@ def stitch_audio(clips, fps=24, output_name=None, upscale=1, trim_seam=False):
         run_ffmpeg(['-f','concat','-safe','0','-i',manifest,'-c','copy','-movflags','+faststart',dest])
     return dest
 
+
+def master_audio_file(name):
+    """Master audio must be a local file in ComfyUI input or output."""
+    import folder_paths
+    if not name or Path(str(name)).name != str(name):
+        raise ValueError('Select a master audio filename (no paths)')
+    if Path(name).suffix.lower() not in ('.wav','.mp3','.flac','.m4a','.ogg','.aac'):
+        raise ValueError('Unsupported master audio format')
+    for root in (Path(folder_paths.get_input_directory()), output_root()):
+        candidate=(root/name).resolve()
+        if candidate.is_relative_to(root.resolve()) and candidate.is_file():
+            return candidate
+    raise FileNotFoundError('Master audio not found in ComfyUI input or output: '+name)
+
+def apply_master_audio(video, audio_filename):
+    source=master_audio_file(audio_filename)
+    result=video.with_name(video.stem+'_master.mp4')
+    run_ffmpeg(['-i',video,'-stream_loop','-1','-i',source,
+                '-map','0:v:0','-map','1:a:0','-c:v','copy','-c:a','aac',
+                '-b:a','192k','-ar','48000','-ac','2','-shortest',
+                '-movflags','+faststart',result])
+    return result
+
+@PromptServer.instance.routes.get('/unwin/audio-files')
+async def unwin_audio_files(request):
+    import folder_paths
+    roots=(Path(folder_paths.get_input_directory()),output_root())
+    allowed={'.wav','.mp3','.flac','.m4a','.ogg','.aac'}
+    names=set()
+    for root in roots:
+        if root.is_dir():
+            names.update(p.name for p in root.iterdir() if p.is_file() and p.suffix.lower() in allowed)
+    return web.json_response({'ok':True,'files':sorted(names)})
+
+@PromptServer.instance.routes.post('/unwin/audio-create')
+async def unwin_audio_create(request):
+    """Generate an original local ambient bed; music/TTS models can be added later."""
+    try:
+        p=await request.json()
+        duration=max(1,min(600,int(p.get('duration',30))))
+        tone=str(p.get('tone','calm'))
+        if tone not in ('calm','dark','bright'):raise ValueError('Invalid tone')
+        frequencies={'calm':(110,164.81),'dark':(73.42,110),'bright':(220,329.63)}
+        a,b=frequencies[tone]
+        filename='unwin_ambient_'+uuid.uuid4().hex[:10]+'.wav'
+        dest=safe_output(filename,False)
+        filtergraph=(f'sine=frequency={a}:sample_rate=48000:duration={duration},volume=0.10[a];'
+                     f'sine=frequency={b}:sample_rate=48000:duration={duration},volume=0.06[b];'
+                     f'[a][b]amix=inputs=2:duration=shortest,'
+                     f'afade=t=in:st=0:d=1,afade=t=out:st={max(0,duration-2)}:d=2[out]')
+        run_ffmpeg(['-filter_complex',filtergraph,'-map','[out]','-c:a','pcm_s16le',dest])
+        return web.json_response({'ok':True,'filename':filename,'kind':'synthetic_ambient'})
+    except Exception as e:return web.json_response({'ok':False,'error':str(e)},status=400)
+
 class UnwinStitch:
     @classmethod
     def INPUT_TYPES(cls):return {'required':{'clips_json':('STRING',{'default':'[]','multiline':True}),'output_name':('STRING',{'default':'unwin_final.mp4'}),'fps':('INT',{'default':24,'min':1,'max':120}),'transition_seconds':('FLOAT',{'default':0,'min':0,'max':3,'step':0.1}),'upscale':([1,2],)}}
@@ -150,7 +204,9 @@ async def unwin_stitch(request):
         fps=max(1,min(60,int(p.get('fps',24))))
         scale=int(p.get('upscale',1))
         dst=stitch_audio(clips,fps,'unwin_director_'+uuid.uuid4().hex[:10]+'.mp4',scale,bool(p.get('trim_seam',False)))
-        return web.json_response({'ok':True,'filename':dst.name,'audio_preserved':True,'upscale':scale})
+        master=str(p.get('master_audio','')).strip()
+        if master:dst=apply_master_audio(dst,master)
+        return web.json_response({'ok':True,'filename':dst.name,'audio_mode':'master' if master else 'scene','upscale':scale})
     except Exception as e:return web.json_response({'ok':False,'error':str(e)},status=400)
 
 
