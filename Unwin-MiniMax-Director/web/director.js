@@ -263,16 +263,36 @@ async function action(a){const shots=state.shots,s=shots[selected];if(a==='lora-
   return;
  }
  if(a==='project-backups'){
-  try{const result=await api('/unwin/project/list');const items=result.projects||[];
-   const options=items.slice(0,30).map((x,i)=>`${i+1}. ${x.filename}`).join('\n');
-   const choice=window.prompt('Saved in: '+result.directory+'\n\nEnter number to load a project or backup:\n'+(options||'(no saved projects)'),'');
-   if(choice===null||!choice.trim())return;
-   const index=Number(choice)-1;if(!Number.isInteger(index)||!items[index])throw Error('Invalid project selection');
-   const loaded=await api('/unwin/project/load?name='+encodeURIComponent(items[index].filename));
-   const d=loaded.project;if(!Array.isArray(d.shots)||!d.shots.length)throw Error('Invalid saved project');
-   if(!window.confirm('Load '+items[index].filename+'? Unsaved changes in the current director will be replaced.'))return;
-   state={...initial(),...d};selected=0;save();draw();logLine('Loaded server project: '+items[index].filename);
-  }catch(e){logLine('Saved projects: '+e.message)}return;
+  try{
+   const result=await api('/unwin/project/list');
+   const items=result.projects||[];
+   const old=document.getElementById('unwin-project-load-dialog');if(old)old.remove();
+   const dialog=document.createElement('div');dialog.id='unwin-project-load-dialog';
+   dialog.style.cssText='position:fixed;z-index:100025;top:18%;left:50%;transform:translateX(-50%);width:min(620px,94vw);background:#19232f;color:#eaf1f7;border:1px solid #75889d;border-radius:10px;padding:20px;box-shadow:0 12px 60px #000b;font:13px Arial';
+   dialog.innerHTML='<h3>Saved Projects / Backups</h3><p id="unwin-project-directory"></p><select id="unwin-project-choices" size="10" style="width:100%;background:#101820;color:white;padding:8px"></select><p id="unwin-project-load-warning">Loading replaces the current Director scene data. Save your current project first.</p><button id="unwin-project-load-button">Load selected project</button> <button id="unwin-project-cancel-button">Cancel</button><p id="unwin-project-load-error" style="color:#f0a9a9"></p>';
+   document.body.appendChild(dialog);
+   dialog.querySelector('#unwin-project-directory').textContent='Saved in: '+(result.directory||'ComfyUI project folder');
+   const select=dialog.querySelector('#unwin-project-choices');
+   items.forEach((item,index)=>{const option=document.createElement('option');option.value=String(index);option.textContent=item.filename;select.appendChild(option)});
+   const error=dialog.querySelector('#unwin-project-load-error');
+   if(!items.length){error.textContent='No saved projects found.';dialog.querySelector('#unwin-project-load-button').disabled=true;}
+   dialog.querySelector('#unwin-project-cancel-button').onclick=()=>dialog.remove();
+   dialog.querySelector('#unwin-project-load-button').onclick=async()=>{
+    const item=items[Number(select.value)];
+    if(!item){error.textContent='Select a saved project.';return;}
+    const button=dialog.querySelector('#unwin-project-load-button');
+    button.disabled=true;
+    try{
+     const loaded=await api('/unwin/project/load?name='+encodeURIComponent(item.filename));
+     const d=loaded.project;
+     if(!Array.isArray(d.shots)||!d.shots.length)throw Error('Invalid saved project');
+     state={...initial(),...d};selected=0;save();draw();
+     logLine('Loaded server project: '+item.filename);
+     dialog.remove();
+    }catch(e){error.textContent='Unable to load: '+e.message;button.disabled=false;}
+   };
+  }catch(e){logLine('Saved projects: '+e.message)}
+  return;
  }
  if(a==='load-project'||a==='import'){const inp=document.createElement('input');inp.type='file';inp.accept='.json';inp.onchange=async()=>{try{const d=JSON.parse(await inp.files[0].text());if(!d||typeof d!=='object'||!Array.isArray(d.shots)||!d.shots.length)throw Error('Invalid project: no scenes');if(!d.shots.every(x=>x&&typeof x==='object'&&typeof x.prompt==='string'))throw Error('Invalid project scene data');state={...initial(),...d};selected=0;save();draw();logLine('Loaded project: '+(state.projectName||inp.files[0].name)+' ('+state.shots.length+' scenes). Output previews require the original video files to remain in ComfyUI output.')}catch(e){logLine(e.message)}};inp.click()}if(a==='stop-batch'){if(batchActive){batchStopRequested=true;logLine('Stop requested: the active scene will finish, then the batch will stop.')}return}
 if(a==='render-project'){if(busy)return;const needsContinuity=shots.findIndex((shot,i)=>i>0&&shot.characterContinuity&&!shot.continuityImage&&!(state.skipCompleted!==false&&shot.output&&shot.status==='done'));if(needsContinuity>=0){selected=needsContinuity;draw();logLine('Render All preflight: Scene '+(needsContinuity+1)+' requires a prepared Qwen frame. Prepare and review it first, or disable character continuity to carry the previous scene final frame directly. No video jobs were queued.');return;}const skip=state.skipCompleted!==false;const todo=shots.map((shot,i)=>({shot,i})).filter(({shot})=>!(skip&&shot.output&&shot.status==='done'));if(!todo.length){logLine('Render All: every scene is already complete. Disable Skip already rendered scenes to rerender.');return}const invalid=todo.find(({shot})=>!String(shot.prompt||'').trim()||!(Number(shot.seconds)>0));if(invalid){logLine('Render All: Scene '+(invalid.i+1)+' needs a prompt and positive duration.');return}const missing=todo.find(({shot,i})=>shot.mode==='i2v'&&!shot.sceneRef&&!shot.characterRef&&!shot.continuityImage&&!(i>0&&shot.carry));if(missing){logLine('Render All: Scene '+(missing.i+1)+' is I2V but has no reference or last-frame carryover.');return}busy=true;batchActive=true;batchStopRequested=false;batchCompleted=0;batchTotal=todo.length;save();draw();openTerminal();logLine('Render All started: '+todo.length+' scenes, in timeline order; '+(skip?'skipping':'rerendering')+' completed scenes. I2V carryover waits for the preceding scene to finish.');try{for(const {i} of todo){if(batchStopRequested){logLine('Render All stopped before Scene '+(i+1));break}selected=i;draw();logLine('Batch '+(batchCompleted+1)+'/'+batchTotal+': rendering Scene '+(i+1)+' ('+shots[i].mode.toUpperCase()+', '+shots[i].seconds+'s)');await render(i);batchCompleted++;logLine('Batch progress: '+batchCompleted+'/'+batchTotal+' scenes completed');save();draw()}if(!batchStopRequested&&batchCompleted===batchTotal)logLine('Render All complete: '+batchCompleted+' scenes finished. Review previews before stitching.')}catch(e){if(shots[selected]&&shots[selected].status!=='done')shots[selected].status='failed';lastProgress='BATCH FAILED: '+e.message;updateTerminal();logLine('Render All stopped after error: '+e.message+' — previously completed scenes are preserved.')}finally{busy=false;batchActive=false;batchStopRequested=false;save();draw()}return}
