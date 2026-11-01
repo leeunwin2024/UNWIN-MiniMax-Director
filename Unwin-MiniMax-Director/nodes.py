@@ -154,6 +154,28 @@ async def unwin_stitch(request):
     except Exception as e:return web.json_response({'ok':False,'error':str(e)},status=400)
 
 
+@PromptServer.instance.routes.get('/unwin/output-videos')
+async def unwin_output_videos(request):
+    """List local video outputs for explicit scene import; no arbitrary filesystem paths."""
+    try:
+        root=output_root()
+        allowed={'.mp4','.webm','.mov','.mkv'}
+        videos=[]
+        for path in root.rglob('*'):
+            if not path.is_file() or path.suffix.lower() not in allowed:
+                continue
+            resolved=path.resolve()
+            if not resolved.is_relative_to(root.resolve()):
+                continue
+            stat=path.stat()
+            videos.append({'filename':path.relative_to(root).as_posix(),
+                           'size':stat.st_size,'modified':stat.st_mtime})
+        videos.sort(key=lambda item:item['modified'],reverse=True)
+        return web.json_response({'ok':True,'videos':videos[:250]})
+    except Exception as e:
+        return web.json_response({'ok':False,'error':str(e)},status=500)
+
+
 @PromptServer.instance.routes.get('/unwin/find-render')
 async def unwin_find_render(request):
     """Find SaveVideo outputs even when ComfyUI history omits its video metadata."""
