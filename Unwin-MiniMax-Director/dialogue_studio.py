@@ -182,3 +182,7 @@ async def dialogue_shot_plan(request):
         return web.json_response({"ok": True, "shot_count": len(shots)})
     except (ValueError, TypeError, FileNotFoundError, json.JSONDecodeError) as e:
         return web.json_response({"ok": False, "error": str(e)}, status=400)
+
+@PromptServer.instance.routes.get("/unwin/audio-studio")
+async def dialogue_studio_page(request):
+    return web.FileResponse(Path(__file__).resolve().parent / "web" / "audio-studio.html")
