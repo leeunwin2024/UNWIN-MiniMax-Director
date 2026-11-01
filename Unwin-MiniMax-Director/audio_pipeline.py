@@ -214,3 +214,51 @@ async def unwin_dialogue_mux(request):
         return web.json_response({"ok": True, "filename": dest.name, "note": "Audio replaced, not lip-synced. Check scene durations against dialogue."})
     except Exception as e:
         return web.json_response({"ok": False, "error": str(e)}, status=400)
+
+def transcribe_local(audio_path, device="cpu"):
+    import whisperx
+    import torch
+    compute_type = "float16" if device == "cuda" else "int8"
+    model = whisperx.load_model("small", device, compute_type=compute_type, download_root=str(BASE / "models" / "whisperx"))
+    audio = whisperx.load_audio(str(audio_path))
+    result = model.transcribe(audio, batch_size=4)
+    segments = result.get("segments", [])
+    try:
+        aligner, metadata = whisperx.load_align_model(language_code=result.get("language", "en"), device=device, model_dir=str(BASE / "models" / "whisperx"))
+        aligned = whisperx.align(segments, aligner, metadata, audio, device, return_char_alignments=False)
+        segments = aligned.get("segments", segments)
+    except Exception:
+        pass
+    return segments
+
+@PromptServer.instance.routes.post("/unwin/dialogue/transcribe")
+async def unwin_transcribe_dialogue(request):
+    try:
+        import importlib.util
+        if importlib.util.find_spec("whisperx") is None:
+            raise RuntimeError("WhisperX is not installed. Install it in ComfyUI's Python environment.")
+        data = await request.json()
+        path, project = read_project(data.get("id"))
+        info = project.get("master_audio")
+        if not info: raise ValueError("Import master audio first")
+        import torch
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        segments = await asyncio.to_thread(transcribe_local, path.parent / info["filename"], device)
+        if not segments: raise ValueError("No speech detected")
+        shots = []
+        for i, seg in enumerate(segments[:300]):
+            start = float(seg.get("start", 0))
+            end = float(seg.get("end", start + 2))
+            if end <= start: continue
+            text = str(seg.get("text", "")).strip()
+            shots.append({"id": "audio_%03d" % (i + 1), "speaker": "Speaker", "dialogue": text,
+                          "start": round(start, 3), "duration": round(min(30, end - start), 3),
+                          "prompt": "Cinematic dialogue film shot of the speaker delivering: " + text[:500],
+                          "lip_sync_required": True, "audio_locked": True})
+        if not shots: raise ValueError("No usable speech segments")
+        project["shots"] = shots
+        project["lines"] = [{"speaker": s["speaker"], "text": s["dialogue"], "emotion": "neutral"} for s in shots]
+        save_project(path, project)
+        return web.json_response({"ok": True, "project": project, "note": "Speaker labels are placeholders; diarization is not enabled. Review timing and speaker assignments."})
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)}, status=400)
