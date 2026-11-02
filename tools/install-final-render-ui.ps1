@@ -48,8 +48,8 @@ if (-not $html.Contains('id="final-render-button"')) {
  $html = $html.Replace($anchor,$panel + $anchor)
  $showAnchor = 'updateRoster()}'
  if (-not $html.Contains($showAnchor)) { throw 'Unexpected show() function; cannot add panel visibility' }
- $html = $html.Replace($showAnchor, "if(\$('final-render-panel'))\$('final-render-panel').classList.toggle('hidden',!project);" + $showAnchor)
- $jsAnchor = "\$('export').onclick="
+ $html = $html.Replace($showAnchor, 'if($(''final-render-panel''))$(''final-render-panel'').classList.toggle(''hidden'',!project);' + $showAnchor)
+ $jsAnchor = '$( ''export'' ).onclick='.Replace(' ', '')
  if (-not $html.Contains($jsAnchor)) { throw 'Unexpected JavaScript layout; cannot attach button' }
  $handler = @'
 $('final-render-button').onclick=async()=>{
