@@ -14,7 +14,6 @@ if(-not $html.Contains('id="unwin-multiscene-check"')){
  $old='<button id="final-render-button">'
  $new='<button id="unwin-multiscene-check" type="button">Check scene jobs</button><button id="unwin-lipsync-check" type="button">Check local lip-sync</button><button id="final-render-button">'
  if(-not $html.Contains($old)){throw 'Final Render button not found'}
- $html=$html.Replace($old,$new)
  $oldScript='</script>'
  $js=@'
 $('unwin-multiscene-check').onclick=async()=>{
@@ -36,8 +35,6 @@ $('unwin-lipsync-check').onclick=async()=>{
 };
 '@
  if(-not $html.Contains($oldScript)){throw 'Audio Studio script closing tag missing'}
- $html=$html.Replace($oldScript,$js+$oldScript)
- $html=$html.Replace('â€”','—').Replace('â€¢','•')
  [IO.File]::WriteAllText($htmlPath,$html,[Text.UTF8Encoding]::new($false))
 }
 Write-Host 'Multi-scene status and lip-sync readiness controls installed.' -ForegroundColor Green
