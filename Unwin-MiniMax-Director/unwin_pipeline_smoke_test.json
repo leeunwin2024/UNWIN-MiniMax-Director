@@ -1,0 +1,52 @@
+{
+  "1": {
+    "class_type": "UnwinExtractFrame",
+    "inputs": {
+      "clip_filename": "unwin_director/test_t2v_00001_.mp4",
+      "position": "last",
+      "output_image_name": "unwin_continuity_last.png"
+    }
+  },
+  "2": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "1",
+        0
+      ],
+      "filename_prefix": "unwin_director/continuity_last_frame"
+    }
+  },
+  "3": {
+    "class_type": "UnwinTimeline",
+    "inputs": {
+      "timeline_json": "{\"shots\":[{\"prompt\":\"Red balloon continues floating gently in daylight\",\"carry_last_frame\":true}]}",
+      "shot_index": 0,
+      "carry_last_frame": true,
+      "previous_frames": [
+        "1",
+        0
+      ]
+    }
+  },
+  "4": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "3",
+        2
+      ],
+      "filename_prefix": "unwin_director/continuity_handoff"
+    }
+  },
+  "5": {
+    "class_type": "UnwinStitch",
+    "inputs": {
+      "clips_json": "[\"unwin_director/test_t2v_00001_.mp4\",\"unwin_director/test_t2v_00001_.mp4\"]",
+      "output_name": "unwin_director_smoke_stitch.mp4",
+      "fps": 24,
+      "transition_seconds": 0,
+      "upscale": 1
+    }
+  }
+}

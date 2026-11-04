@@ -1,0 +1,12 @@
+{
+  "1": {
+    "class_type": "UnwinStitch",
+    "inputs": {
+      "clips_json": "[\"unwin_director/test_t2v_00001_.mp4\",\"unwin_director/continuity_scene2_short_00001_.mp4\"]",
+      "output_name": "unwin_two_scene_continuity.mp4",
+      "fps": 24,
+      "transition_seconds": 0,
+      "upscale": 1
+    }
+  }
+}
